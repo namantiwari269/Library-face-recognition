@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Browse Books</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            color: #333;
+        }
+        
+        button {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-back {
+            background: #f0f0f0;
+            color: #333;
+        }
+        
+        .btn-back:hover {
+            background: #e0e0e0;
+        }
+        
+        .books-container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .search-box {
+            margin-bottom: 30px;
+        }
+        
+        .search-box input {
+            width: 100%;
+            padding: 15px;
+            font-size: 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+        }
+        
+        .search-box input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .books-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 25px;
+        }
+        
+        .book-card {
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 25px;
+            transition: all 0.3s;
+            background: #fafafa;
+        }
+        
+        .book-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
+            transform: translateY(-5px);
+        }
+        
+        .book-card h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 20px;
+            min-height: 48px;
+        }
+        
+        .book-info {
+            color: #666;
+            font-size: 14px;
+            margin: 8px 0;
+        }
+        
+        .book-info strong {
+            color: #333;
+        }
+        
+        .availability {
+            display: inline-block;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: bold;
+            margin: 15px 0 10px 0;
+        }
+        
+        .available {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .btn-borrow {
+            background: #667eea;
+            color: white;
+            padding: 10px 20px;
+            width: 100%;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        
+        .btn-borrow:hover {
+            background: #5568d3;
+        }
+        
+        .empty-message {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>📚 Available Books</h1>
+        <button class="btn-back" onclick="history.back()">← Back to Dashboard</button>
+    </div>
+    
+    <div class="books-container">
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="🔍 Search books by title, author, or Book ID..." onkeyup="filterBooks()">
+        </div>
+        
+        {% if books %}
+            <div class="books-grid" id="booksGrid">
+                {% for book in books %}
+                <div class="book-card" data-title="{{ book.title|lower }}" data-author="{{ (book.author or '')|lower }}" data-bookid="{{ book.book_id|lower }}">
+                    <h3>{{ book.title }}</h3>
+                    {% if book.author %}
+                    <div class="book-info"><strong>Author:</strong> {{ book.author }}</div>
+                    {% endif %}
+                    <div class="book-info"><strong>Book ID:</strong> {{ book.book_id }}</div>
+                    {% if book.genre %}
+                    <div class="book-info"><strong>Genre:</strong> {{ book.genre }}</div>
+                    {% endif %}
+                    
+                    <div class="availability available">✓ Available</div>
+                    
+                    <button class="btn-borrow" onclick="borrowBook('{{ book.book_id }}')">
+                        Borrow This Book
+                    </button>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty-message">
+                <p>No books available at the moment.</p>
+                <p style="font-size: 14px; margin-top: 10px;">All books are currently borrowed. Please check back later.</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+    // Get user_id from URL parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const userId = urlParams.get('user_id');
+    
+function filterBooks() {
+    const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
+    const bookCards = document.querySelectorAll('.book-card');
+    
+    bookCards.forEach(card => {
+        const title = card.dataset.title || '';
+        const author = card.dataset.author || '';
+        const bookid = card.dataset.bookid || '';
+        
+        if (title.includes(searchTerm) || author.includes(searchTerm) || bookid.includes(searchTerm)) {
+            card.style.display = '';  // Reset to default (follows grid layout)
+        } else {
+            card.style.display = 'none';
+        }
+    });
+}
+    
+    async function borrowBook(bookId) {
+        if (!userId) {
+            alert('User ID not found. Please login again.');
+            window.location.href = '/login_page';
+            return;
+        }
+        
+        if (!confirm('Do you want to borrow this book?')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/borrow/${bookId}/${userId}`, {
+                method: 'POST'
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                alert(data.message);
+                location.reload();
+            } else {
+                alert('Error: ' + data.message);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Failed to borrow book. Please try again.');
+        }
+    }
+</script>
+
+</body>
+</html>

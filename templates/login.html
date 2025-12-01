@@ -110,6 +110,9 @@
                 document.getElementById('startContainer').style.display = 'none';
                 document.getElementById('videoContainer').style.display = 'block';
                 document.getElementById('video').src = '/video_feed_login?t=' + new Date().getTime();
+                
+                // Check for successful login every 2 seconds
+                checkLoginInterval = setInterval(checkForLoginSuccess, 2000);
             } else {
                 document.getElementById('errorMessage').innerHTML = 
                     '<strong>Error:</strong> ' + (data.message || 'Failed to start login');
@@ -123,8 +126,28 @@
         }
     }
     
+    let checkLoginInterval;
+    
+    async function checkForLoginSuccess() {
+        try {
+            const response = await fetch('/check_login_success');
+            const data = await response.json();
+            
+            if (data.success) {
+                clearInterval(checkLoginInterval);
+                await fetch('/stop_login');
+                window.location.href = '/dashboard/' + data.user.user_id;
+            }
+        } catch (error) {
+            console.error('Error checking login:', error);
+        }
+    }
+    
     async function stopLogin() {
         try {
+            if (checkLoginInterval) {
+                clearInterval(checkLoginInterval);
+            }
             await fetch('/stop_login');
         } catch (error) {
             console.error('Error stopping login:', error);

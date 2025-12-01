@@ -20,7 +20,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_CONFIG = {
     "host": "localhost",
     "user": "root",
-    "password": "password",
+    "password": "password",  # Change this
     "database": "smart_library"
 }
 
@@ -44,6 +44,7 @@ class CameraState:
         self.signup_mode = False
         self.login_mode = False
         self.signup_data = {}
+        self.login_success = None
     
     def get_camera(self):
         with self.lock:
@@ -282,6 +283,7 @@ def video_feed_signup():
 @app.route("/stop_signup")
 def stop_signup():
     camera_state.signup_mode = False
+    time.sleep(0.2)
     camera_state.release_camera()
     return jsonify({"success": True})
 
@@ -340,6 +342,12 @@ def generate_login_frames():
                                         user_id, name = res
                                         label = f"{name} | {face_id}"
                                         color = (0, 255, 0)
+                                        # Store in session for redirect
+                                        camera_state.login_success = {
+                                            'user_id': user_id,
+                                            'name': name,
+                                            'face_id': face_id
+                                        }
                                     else:
                                         label = f"{face_id}"
                                         color = (255, 165, 0)
@@ -384,8 +392,136 @@ def video_feed_login():
 @app.route("/stop_login")
 def stop_login():
     camera_state.login_mode = False
+    time.sleep(0.2)
     camera_state.release_camera()
     return jsonify({"success": True})
+
+@app.route("/check_login_success")
+def check_login_success():
+    if camera_state.login_success:
+        user_data = camera_state.login_success
+        camera_state.login_success = None
+        return jsonify({"success": True, "user": user_data})
+    return jsonify({"success": False})
+
+@app.route("/dashboard/<int:user_id>")
+def dashboard(user_id):
+    try:
+        from datetime import datetime
+        
+        db = connect_db()
+        if not db:
+            return "Database connection failed", 500
+        
+        cursor = db.cursor(dictionary=True)
+        
+        # Get user info
+        cursor.execute("SELECT * FROM users WHERE user_id = %s", (user_id,))
+        user = cursor.fetchone()
+        
+        if not user:
+            return "User not found", 404
+        
+        # Get borrowed books - ADAPTED for your schema
+        cursor.execute("""
+            SELECT b.*, bh.borrow_time, bh.return_time, bh.status, bh.id as borrow_id
+            FROM borrow_history bh
+            JOIN books b ON bh.book_id = b.book_id
+            WHERE bh.user_id = %s
+            ORDER BY bh.borrow_time DESC
+        """, (user_id,))
+        borrowings = cursor.fetchall()
+        
+        db.close()
+        
+        return render_template("dashboard_simple.html", user=user, borrowings=borrowings, now=datetime.now)
+    except Exception as e:
+        print(f"Error loading dashboard: {e}")
+        traceback.print_exc()
+        return f"Error: {str(e)}", 500
+
+@app.route("/books")
+def books_list():
+    try:
+        db = connect_db()
+        if not db:
+            return "Database connection failed", 500
+        
+        cursor = db.cursor(dictionary=True)
+        
+        # Check which books are not currently borrowed
+        cursor.execute("""
+            SELECT b.* FROM books b
+            WHERE b.book_id NOT IN (
+                SELECT book_id FROM borrow_history WHERE status = 'BORROWED'
+            )
+            ORDER BY b.title
+        """)
+        books = cursor.fetchall()
+        db.close()
+        
+        return render_template("books_simple.html", books=books)
+    except Exception as e:
+        print(f"Error loading books: {e}")
+        return f"Error: {str(e)}", 500
+
+@app.route("/borrow/<book_id>/<int:user_id>", methods=["POST"])
+def borrow_book(book_id, user_id):
+    try:
+        db = connect_db()
+        if not db:
+            return jsonify({"success": False, "message": "Database connection failed"})
+        
+        cursor = db.cursor()
+        
+        # Check if book is already borrowed
+        cursor.execute("""
+            SELECT id FROM borrow_history 
+            WHERE book_id = %s AND status = 'BORROWED'
+        """, (book_id,))
+        
+        if cursor.fetchone():
+            return jsonify({"success": False, "message": "Book is already borrowed"})
+        
+        # Create borrowing record
+        from datetime import datetime
+        cursor.execute("""
+            INSERT INTO borrow_history (user_id, book_id, borrow_time, status)
+            VALUES (%s, %s, %s, 'BORROWED')
+        """, (user_id, book_id, datetime.now()))
+        
+        db.commit()
+        db.close()
+        
+        return jsonify({"success": True, "message": "Book borrowed successfully!"})
+    except Exception as e:
+        print(f"Error borrowing book: {e}")
+        return jsonify({"success": False, "message": str(e)})
+
+@app.route("/return/<int:borrow_id>", methods=["POST"])
+def return_book(borrow_id):
+    try:
+        db = connect_db()
+        if not db:
+            return jsonify({"success": False, "message": "Database connection failed"})
+        
+        cursor = db.cursor()
+        
+        # Update borrowing record
+        from datetime import datetime
+        cursor.execute("""
+            UPDATE borrow_history 
+            SET return_time = %s, status = 'RETURNED'
+            WHERE id = %s
+        """, (datetime.now(), borrow_id))
+        
+        db.commit()
+        db.close()
+        
+        return jsonify({"success": True, "message": "Book returned successfully!"})
+    except Exception as e:
+        print(f"Error returning book: {e}")
+        return jsonify({"success": False, "message": str(e)})
 
 if __name__ == "__main__":
     os.makedirs("dataset", exist_ok=True)
@@ -396,7 +532,7 @@ if __name__ == "__main__":
     print("="*50)
     print("Make sure you have:")
     print("1. MySQL database 'smart_library' created")
-    print("2. Table 'users' with columns: user_id, name, email, face_id")
+    print("2. Tables: users, books, borrow_history")
     print("3. Camera connected and working")
     print("="*50 + "\n")
     
