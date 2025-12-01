@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login - Face Recognition</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .container {
+            background: #f5f5f5;
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        button {
+            padding: 12px 24px;
+            font-size: 18px;
+            margin: 10px 5px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+        }
+        .primary-btn {
+            background: #764ba2;
+            color: white;
+        }
+        .primary-btn:hover {
+            background: #63409b;
+        }
+        .secondary-btn {
+            background: #ccc;
+            color: #333;
+        }
+        .secondary-btn:hover {
+            background: #bbb;
+        }
+        #video {
+            width: 100%;
+            max-width: 640px;
+            border: 3px solid #333;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        #videoContainer {
+            display: none;
+        }
+        .error {
+            color: red;
+            padding: 15px;
+            background: #ffe6e6;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .info {
+            color: #0066cc;
+            padding: 15px;
+            background: #e6f3ff;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🔓 Login - Face Recognition</h1>
+    
+    {% if error %}
+    <div class="error">
+        <strong>Error:</strong> {{ error }}
+        <br><br>
+        <a href="/signup_page"><button class="primary-btn">Go to Sign Up</button></a>
+    </div>
+    {% endif %}
+    
+    <div id="startContainer">
+        <div class="info">
+            <p><strong>Instructions:</strong></p>
+            <p>1. Click "Start Face Recognition" below</p>
+            <p>2. Position your face in front of the camera</p>
+            <p>3. The system will automatically recognize you</p>
+        </div>
+        
+        <button class="primary-btn" onclick="startLogin()">Start Face Recognition</button>
+        <br>
+        <a href="/"><button class="secondary-btn">Back to Home</button></a>
+    </div>
+    
+    <div id="videoContainer">
+        <h3>👤 Look at the camera</h3>
+        <p>Your face will be recognized automatically when detected.</p>
+        <img id="video" src="" alt="Video Feed">
+        <br>
+        <button class="secondary-btn" onclick="stopLogin()">Stop</button>
+    </div>
+    
+    <div id="errorMessage" style="display: none;" class="error"></div>
+</div>
+
+<script>
+    async function startLogin() {
+        try {
+            const response = await fetch('/start_login');
+            const data = await response.json();
+            
+            if (data.success) {
+                document.getElementById('startContainer').style.display = 'none';
+                document.getElementById('videoContainer').style.display = 'block';
+                document.getElementById('video').src = '/video_feed_login?t=' + new Date().getTime();
+            } else {
+                document.getElementById('errorMessage').innerHTML = 
+                    '<strong>Error:</strong> ' + (data.message || 'Failed to start login');
+                document.getElementById('errorMessage').style.display = 'block';
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            document.getElementById('errorMessage').innerHTML = 
+                '<strong>Error:</strong> Failed to connect to server';
+            document.getElementById('errorMessage').style.display = 'block';
+        }
+    }
+    
+    async function stopLogin() {
+        try {
+            await fetch('/stop_login');
+        } catch (error) {
+            console.error('Error stopping login:', error);
+        }
+        window.location.href = '/';
+    }
+    
+    // Check if page loaded properly
+    window.addEventListener('load', function() {
+        console.log('Login page loaded successfully');
+    });
+</script>
+
+</body>
+</html>
