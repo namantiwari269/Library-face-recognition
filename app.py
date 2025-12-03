@@ -460,7 +460,7 @@ def books_list():
         books = cursor.fetchall()
         db.close()
         
-        return render_template("books_simple.html", books=books)
+        return render_template("book_simple.html", books=books)
     except Exception as e:
         print(f"Error loading books: {e}")
         return f"Error: {str(e)}", 500

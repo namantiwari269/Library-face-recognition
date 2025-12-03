@@ -198,22 +198,22 @@
     const urlParams = new URLSearchParams(window.location.search);
     const userId = urlParams.get('user_id');
     
-function filterBooks() {
-    const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
-    const bookCards = document.querySelectorAll('.book-card');
-    
-    bookCards.forEach(card => {
-        const title = card.dataset.title || '';
-        const author = card.dataset.author || '';
-        const bookid = card.dataset.bookid || '';
+    function filterBooks() {
+        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+        const bookCards = document.querySelectorAll('.book-card');
         
-        if (title.includes(searchTerm) || author.includes(searchTerm) || bookid.includes(searchTerm)) {
-            card.style.display = '';  // Reset to default (follows grid layout)
-        } else {
-            card.style.display = 'none';
-        }
-    });
-}
+        bookCards.forEach(card => {
+            const title = card.dataset.title;
+            const author = card.dataset.author;
+            const bookid = card.dataset.bookid;
+            
+            if (title.includes(searchTerm) || author.includes(searchTerm) || bookid.includes(searchTerm)) {
+                card.style.display = 'block';
+            } else {
+                card.style.display = 'none';
+            }
+        });
+    }
     
     async function borrowBook(bookId) {
         if (!userId) {
