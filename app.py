@@ -525,28 +525,6 @@ def return_book(borrow_id):
         print(f"Error returning book: {e}")
         return jsonify({"success": False, "message": str(e)})
 
-if __name__ == "__main__":
-    os.makedirs("dataset", exist_ok=True)
-    os.makedirs("templates", exist_ok=True)
-    
-    print("\n" + "="*50)
-    print("Face Recognition System Starting...")
-    print("="*50)
-    print("Make sure you have:")
-    print("1. MySQL database 'smart_library' created")
-    print("2. Tables: users, books, borrow_history")
-    print("3. Camera connected and working")
-    print("="*50 + "\n")
-    
-    app.run(debug=True, threaded=True, host='0.0.0.0', port=5000)
-    
-    #xxxxxxxx
-    
-    
-    # ============= BARCODE SCANNING ROUTES =============
-
-
-
 # Admin credentials (change these!)
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "admin123"
@@ -561,19 +539,19 @@ class BarcodeState:
 
 barcode_state = BarcodeState()
 
-@app.route("/admin_login")
+@app.route("/admin_login", methods=["GET", "POST"])
 def admin_login_page():
-    return render_template("admin_login.html")
-
-@app.route("/admin_login", methods=["POST"])
-def admin_login():
-    username = request.form.get("username", "").strip()
-    password = request.form.get("password", "").strip()
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "").strip()
+        
+        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+            return jsonify({"success": True})
+        else:
+            return jsonify({"success": False, "message": "Invalid credentials"})
     
-    if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
-        return jsonify({"success": True})
-    else:
-        return jsonify({"success": False, "message": "Invalid credentials"})
+    # GET request - return login page
+    return render_template("admin_login.html")
 
 @app.route("/admin_dashboard")
 def admin_dashboard():
@@ -629,6 +607,7 @@ def admin_dashboard():
 def scan_barcode_page(mode):
     # mode: 'borrow', 'return', 'admin_add'
     user_id = request.args.get('user_id')
+    
     return render_template("barcode_scanner.html", mode=mode, user_id=user_id)
 
 @app.route("/start_barcode_scan/<mode>")
@@ -879,3 +858,22 @@ def delete_book(book_id):
     except Exception as e:
         print(f"Error deleting book: {e}")
         return jsonify({"success": False, "message": str(e)})
+
+if __name__ == "__main__":
+    os.makedirs("dataset", exist_ok=True)
+    os.makedirs("templates", exist_ok=True)
+    
+    print("\n" + "="*50)
+    print("Face Recognition System Starting...")
+    print("="*50)
+    print("Make sure you have:")
+    print("1. MySQL database 'smart_library' created")
+    print("2. Tables: users, books, borrow_history")
+    print("3. Camera connected and working")
+    print("="*50 + "\n")
+    
+    try:
+        app.run(debug=False, threaded=True, host='0.0.0.0', port=5000)
+    except Exception as e:
+        print(f"Error starting app: {e}")
+        traceback.print_exc()
