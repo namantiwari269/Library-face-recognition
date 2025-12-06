@@ -10,6 +10,8 @@ import numpy as np
 import traceback
 import threading
 import time
+from pyzbar import pyzbar
+
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'
@@ -537,3 +539,343 @@ if __name__ == "__main__":
     print("="*50 + "\n")
     
     app.run(debug=True, threaded=True, host='0.0.0.0', port=5000)
+    
+    #xxxxxxxx
+    
+    
+    # ============= BARCODE SCANNING ROUTES =============
+
+
+
+# Admin credentials (change these!)
+ADMIN_USERNAME = "admin"
+ADMIN_PASSWORD = "admin123"
+
+# Barcode scanning state
+class BarcodeState:
+    def __init__(self):
+        self.scan_mode = None  # 'borrow', 'return', or 'admin_add'
+        self.user_id = None
+        self.scanned_code = None
+        self.camera = None
+
+barcode_state = BarcodeState()
+
+@app.route("/admin_login")
+def admin_login_page():
+    return render_template("admin_login.html")
+
+@app.route("/admin_login", methods=["POST"])
+def admin_login():
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "").strip()
+    
+    if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+        return jsonify({"success": True})
+    else:
+        return jsonify({"success": False, "message": "Invalid credentials"})
+
+@app.route("/admin_dashboard")
+def admin_dashboard():
+    try:
+        db = connect_db()
+        if not db:
+            return "Database connection failed", 500
+        
+        cursor = db.cursor(dictionary=True)
+        
+        # Get statistics
+        cursor.execute("SELECT COUNT(*) as total FROM books")
+        total_books = cursor.fetchone()['total']
+        
+        cursor.execute("SELECT COUNT(*) as total FROM users")
+        total_users = cursor.fetchone()['total']
+        
+        cursor.execute("""
+            SELECT COUNT(*) as total FROM borrow_history 
+            WHERE status = 'BORROWED'
+        """)
+        currently_borrowed = cursor.fetchone()['total']
+        
+        # Get all books
+        cursor.execute("SELECT * FROM books ORDER BY book_id")
+        all_books = cursor.fetchall()
+        
+        # Get recent borrowings
+        cursor.execute("""
+            SELECT bh.*, u.name as user_name, b.title
+            FROM borrow_history bh
+            JOIN users u ON bh.user_id = u.user_id
+            JOIN books b ON bh.book_id = b.book_id
+            ORDER BY bh.borrow_time DESC
+            LIMIT 10
+        """)
+        recent_activity = cursor.fetchall()
+        
+        db.close()
+        
+        return render_template("admin_dashboard.html", 
+                             total_books=total_books,
+                             total_users=total_users,
+                             currently_borrowed=currently_borrowed,
+                             all_books=all_books,
+                             recent_activity=recent_activity)
+    except Exception as e:
+        print(f"Error: {e}")
+        traceback.print_exc()
+        return f"Error: {str(e)}", 500
+
+@app.route("/scan_barcode_page/<mode>")
+def scan_barcode_page(mode):
+    # mode: 'borrow', 'return', 'admin_add'
+    user_id = request.args.get('user_id')
+    return render_template("barcode_scanner.html", mode=mode, user_id=user_id)
+
+@app.route("/start_barcode_scan/<mode>")
+def start_barcode_scan(mode):
+    user_id = request.args.get('user_id')
+    barcode_state.scan_mode = mode
+    barcode_state.user_id = user_id
+    barcode_state.scanned_code = None
+    return jsonify({"success": True})
+
+def generate_barcode_frames():
+    """Generate video frames with barcode detection"""
+    cam = camera_state.get_camera()
+    
+    try:
+        while barcode_state.scan_mode:
+            success, frame = cam.read()
+            if not success:
+                time.sleep(0.1)
+                continue
+            
+            # Detect barcodes
+            barcodes = pyzbar.decode(frame)
+            
+            for barcode in barcodes:
+                # Extract barcode data
+                barcode_data = barcode.data.decode('utf-8')
+                barcode_type = barcode.type
+                
+                # Draw rectangle around barcode
+                (x, y, w, h) = barcode.rect
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 3)
+                
+                # Display barcode data
+                text = f"{barcode_type}: {barcode_data}"
+                cv2.putText(frame, text, (x, y - 10),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                
+                # Store scanned code
+                barcode_state.scanned_code = barcode_data
+                
+                # Show success message
+                cv2.putText(frame, "SCANNED! Processing...", (50, 50),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 3)
+            
+            if not barcodes:
+                cv2.putText(frame, "Position barcode in view", (50, 50),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
+                cv2.putText(frame, "Align with camera", (50, 90),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+            
+            ret, buffer = cv2.imencode('.jpg', frame)
+            frame_bytes = buffer.tobytes()
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+    
+    except Exception as e:
+        print(f"Error in barcode scanning: {e}")
+        traceback.print_exc()
+
+@app.route("/video_feed_barcode")
+def video_feed_barcode():
+    return Response(generate_barcode_frames(),
+                   mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route("/check_barcode_scanned")
+def check_barcode_scanned():
+    if barcode_state.scanned_code:
+        code = barcode_state.scanned_code
+        mode = barcode_state.scan_mode
+        user_id = barcode_state.user_id
+        
+        # Reset state
+        barcode_state.scanned_code = None
+        
+        return jsonify({
+            "success": True,
+            "code": code,
+            "mode": mode,
+            "user_id": user_id
+        })
+    return jsonify({"success": False})
+
+@app.route("/stop_barcode_scan")
+def stop_barcode_scan():
+    barcode_state.scan_mode = None
+    camera_state.release_camera()
+    return jsonify({"success": True})
+
+@app.route("/process_barcode", methods=["POST"])
+def process_barcode():
+    try:
+        code = request.form.get("code")
+        mode = request.form.get("mode")
+        user_id = request.form.get("user_id")
+        
+        db = connect_db()
+        if not db:
+            return jsonify({"success": False, "message": "Database connection failed"})
+        
+        cursor = db.cursor(dictionary=True)
+        
+        if mode == "borrow":
+            # Check if book exists
+            cursor.execute("SELECT * FROM books WHERE book_id = %s", (code,))
+            book = cursor.fetchone()
+            
+            if not book:
+                return jsonify({"success": False, "message": "Book not found!"})
+            
+            # Check if already borrowed
+            cursor.execute("""
+                SELECT id FROM borrow_history 
+                WHERE book_id = %s AND status = 'BORROWED'
+            """, (code,))
+            
+            if cursor.fetchone():
+                return jsonify({"success": False, "message": "Book is already borrowed!"})
+            
+            # Borrow the book
+            from datetime import datetime
+            cursor.execute("""
+                INSERT INTO borrow_history (user_id, book_id, borrow_time, status)
+                VALUES (%s, %s, %s, 'BORROWED')
+            """, (user_id, code, datetime.now()))
+            
+            db.commit()
+            db.close()
+            
+            return jsonify({
+                "success": True,
+                "message": f"Successfully borrowed: {book['title']}",
+                "book": book
+            })
+        
+        elif mode == "return":
+            # Find active borrowing
+            cursor.execute("""
+                SELECT bh.*, b.title
+                FROM borrow_history bh
+                JOIN books b ON bh.book_id = b.book_id
+                WHERE bh.book_id = %s AND bh.user_id = %s AND bh.status = 'BORROWED'
+            """, (code, user_id))
+            
+            borrowing = cursor.fetchone()
+            
+            if not borrowing:
+                return jsonify({"success": False, "message": "No active borrowing found for this book!"})
+            
+            # Return the book
+            from datetime import datetime
+            cursor.execute("""
+                UPDATE borrow_history
+                SET return_time = %s, status = 'RETURNED'
+                WHERE id = %s
+            """, (datetime.now(), borrowing['id']))
+            
+            db.commit()
+            db.close()
+            
+            return jsonify({
+                "success": True,
+                "message": f"Successfully returned: {borrowing['title']}"
+            })
+        
+        elif mode == "admin_add":
+            # Check if book already exists
+            cursor.execute("SELECT * FROM books WHERE book_id = %s", (code,))
+            existing = cursor.fetchone()
+            
+            if existing:
+                return jsonify({
+                    "success": False,
+                    "message": "Book with this barcode already exists!",
+                    "book": existing
+                })
+            
+            return jsonify({
+                "success": True,
+                "message": "Barcode scanned! Please enter book details.",
+                "code": code
+            })
+        
+        db.close()
+        return jsonify({"success": False, "message": "Invalid mode"})
+        
+    except Exception as e:
+        print(f"Error processing barcode: {e}")
+        traceback.print_exc()
+        return jsonify({"success": False, "message": str(e)})
+
+@app.route("/add_book", methods=["POST"])
+def add_book():
+    try:
+        book_id = request.form.get("book_id")
+        title = request.form.get("title")
+        author = request.form.get("author")
+        genre = request.form.get("genre")
+        
+        if not all([book_id, title]):
+            return jsonify({"success": False, "message": "Book ID and Title are required"})
+        
+        db = connect_db()
+        if not db:
+            return jsonify({"success": False, "message": "Database connection failed"})
+        
+        cursor = db.cursor()
+        cursor.execute("""
+            INSERT INTO books (book_id, title, author, genre)
+            VALUES (%s, %s, %s, %s)
+        """, (book_id, title, author, genre))
+        
+        db.commit()
+        db.close()
+        
+        return jsonify({"success": True, "message": f"Book '{title}' added successfully!"})
+    
+    except mysql.connector.IntegrityError:
+        return jsonify({"success": False, "message": "Book with this ID already exists!"})
+    except Exception as e:
+        print(f"Error adding book: {e}")
+        return jsonify({"success": False, "message": str(e)})
+
+@app.route("/delete_book/<book_id>", methods=["POST"])
+def delete_book(book_id):
+    try:
+        db = connect_db()
+        if not db:
+            return jsonify({"success": False, "message": "Database connection failed"})
+        
+        cursor = db.cursor()
+        
+        # Check if book is currently borrowed
+        cursor.execute("""
+            SELECT id FROM borrow_history 
+            WHERE book_id = %s AND status = 'BORROWED'
+        """, (book_id,))
+        
+        if cursor.fetchone():
+            return jsonify({"success": False, "message": "Cannot delete! Book is currently borrowed."})
+        
+        cursor.execute("DELETE FROM books WHERE book_id = %s", (book_id,))
+        db.commit()
+        db.close()
+        
+        return jsonify({"success": True, "message": "Book deleted successfully!"})
+    
+    except Exception as e:
+        print(f"Error deleting book: {e}")
+        return jsonify({"success": False, "message": str(e)})
